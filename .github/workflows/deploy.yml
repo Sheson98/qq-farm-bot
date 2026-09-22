@@ -1,34 +1,49 @@
-name: Deploy
+name: Build & Deploy
 on:
   push:
     branches: [ master ]
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 安装依赖，打包（前端示例，按你的项目改）
-      - name: Install & Build
-        run: |
-          pnpm build
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
 
-      # 上传打包后的dist文件夹到服务器
-      - name: Upload dist to server
+      - name: Install pnpm
+        run: corepack enable pnpm
+
+      - name: Install dependencies and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+          # 打包dist为zip
+          cd dist
+          zip -r site.zip .
+
+      - name: Upload zip & Unzip
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # 本地runner上的dist目录，远程服务器目标目录
           script_stop: true
           script: |
             set -e
-            echo "准备接收文件，目标目录：/你的服务器打包文件夹绝对路径"
-            # 先备份旧版本，防止炸了方便回滚
-            cp -r /你的服务器打包文件夹绝对路径 /你的服务器打包文件夹绝对路径.bak.$(date +%Y%m%d_%H%M%S)
-          # scp传输，local是github runner内路径，remote是服务器路径
+            # 备份旧文件
+            cp -r /home/ubuntu/qq-farm-bot /home/ubuntu/qq-farm-bot.bak.$(date +%Y%m%d_%H%M%S)
+            # 清空目录
+            rm -rf /home/ubuntu/qq-farm-bot/*
+            # 解压
+            cd /home/ubuntu/qq-farm-bot
+            unzip -o ~/site.zip
+            # 删除压缩包
+            rm -f ~/site.zip
           scp: |
-            /home/ubuntu/qq-farm-bot:/你的服务器打包文件夹绝对路径
+            dist/site.zip ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/site.zip
