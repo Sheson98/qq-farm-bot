@@ -13,7 +13,11 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # 这里！！不要写 version:xx 这一行，直接删掉
+          node-version: 20
+
+      - name: Check pnpm version
+        run: pnpm -v
 
       - name: Install dependencies and build
         run: |
