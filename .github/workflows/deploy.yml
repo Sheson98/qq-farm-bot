@@ -1,0 +1,19 @@
+name: Deploy
+on:
+  push:
+    branches: [ master ] # fork仓库master更新就触发部署
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH deploy to your server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /your/project/path
+            git pull
+            # 构建、重启服务命令
