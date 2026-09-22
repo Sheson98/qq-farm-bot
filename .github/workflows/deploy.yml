@@ -10,20 +10,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
+          version: 9
           node-version: 20
-          cache: 'pnpm'
-
-      - name: Install pnpm
-        run: corepack enable pnpm
 
       - name: Install dependencies and build
         run: |
           pnpm install --frozen-lockfile
           pnpm run build
-          # 打包dist为zip
           cd dist
           zip -r site.zip .
 
