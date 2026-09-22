@@ -1,19 +1,34 @@
 name: Deploy
 on:
   push:
-    branches: [ master ] # fork仓库master更新就触发部署
+    branches: [ master ]
+
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: SSH deploy to your server
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # 安装依赖，打包（前端示例，按你的项目改）
+      - name: Install & Build
+        run: |
+          pnpm build
+
+      # 上传打包后的dist文件夹到服务器
+      - name: Upload dist to server
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # 本地runner上的dist目录，远程服务器目标目录
+          script_stop: true
           script: |
-            cd /home/ubuntu/qq-farm-bot
-            git pull
-            # 构建、重启服务命令
+            set -e
+            echo "准备接收文件，目标目录：/你的服务器打包文件夹绝对路径"
+            # 先备份旧版本，防止炸了方便回滚
+            cp -r /你的服务器打包文件夹绝对路径 /你的服务器打包文件夹绝对路径.bak.$(date +%Y%m%d_%H%M%S)
+          # scp传输，local是github runner内路径，remote是服务器路径
+          scp: |
+            /home/ubuntu/qq-farm-bot:/你的服务器打包文件夹绝对路径
