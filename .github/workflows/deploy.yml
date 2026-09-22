@@ -21,10 +21,11 @@ jobs:
 
       - name: Install dependencies and build
         run: |
+          cd core
           pnpm install --frozen-lockfile
           pnpm run build
           cd dist
-          zip -r site.zip .
+          tar -zcvf qq-farm-bot.tar.gz .
 
       - name: Upload zip & Unzip
         uses: appleboy/ssh-action@master
@@ -35,14 +36,14 @@ jobs:
           script_stop: true
           script: |
             set -e
-            # 备份旧文件
-            cp -r /home/ubuntu/qq-farm-bot /home/ubuntu/qq-farm-bot.bak.$(date +%Y%m%d_%H%M%S)
-            # 清空目录
-            rm -rf /home/ubuntu/qq-farm-bot/*
-            # 解压
+            # 备份
+            if [ -d "/home/ubuntu/qq-farm-bot" ]; then
+              mv /home/ubuntu/qq-farm-bot /home/ubuntu/qq-farm-bot.bak.$(date +%Y%m%d_%H%M%S)
+            fi
+            mkdir -p /home/ubuntu/qq-farm-bot
             cd /home/ubuntu/qq-farm-bot
-            unzip -o ~/site.zip
-            # 删除压缩包
-            rm -f ~/site.zip
+            tar -zxvf /home/ubuntu/qq-farm-bot.tar.gz
+            rm -f /home/ubuntu/qq-farm-bot.tar.gz
+          # scp：本地 core/dist/qq-farm-bot.tar.gz 上传到服务器 /home/ubuntu/qq-farm-bot.tar.gz
           scp: |
-            dist/site.zip ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/site.zip
+            core/dist/qq-farm-bot.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/home/ubuntu/qq-farm-bot.tar.gz
