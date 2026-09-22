@@ -14,6 +14,6 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /your/project/path
+            cd /home/ubuntu/qq-farm-bot
             git pull
             # 构建、重启服务命令
