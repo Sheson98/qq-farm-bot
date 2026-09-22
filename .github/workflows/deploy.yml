@@ -24,8 +24,9 @@ jobs:
           cd core
           pnpm install --frozen-lockfile
           pnpm run build
-          cd dist
-          tar -zcvf qq-farm-bot.tar.gz .
+          # 在core目录打包dist文件夹，包放在core/qq-farm-bot.tar.gz
+          tar -zcvf qq-farm-bot.tar.gz dist
+          
 
       - name: Upload zip & Unzip
         uses: appleboy/ssh-action@master
