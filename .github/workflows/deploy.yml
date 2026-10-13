@@ -9,13 +9,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 【重点1】先安装pnpm！写在setup-node前面
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 8 # qq-farm-bot老项目推荐pnpm8，兼容性最好
+        # 不写version，自动读取package.json packageManager字段 pnpm@10.30.2
 
-      # 【重点2】再加载Node20环境
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
@@ -32,7 +29,7 @@ jobs:
           pnpm run build
           # 在core目录打包dist文件夹，输出 core/qq-farm-bot.tar.gz
           tar -zcvf qq-farm-bot.tar.gz dist
-          ls -la # 调试打印文件
+          ls -la # 打印目录，确认tar包生成成功
 
       - name: Upload tar & Deploy
         uses: appleboy/ssh-action@master
@@ -41,7 +38,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
-          # scp源路径 core/qq-farm-bot.tar.gz
+          # scp 上传 core/qq-farm-bot.tar.gz 到服务器 /home/ubuntu/qq-farm-bot.tar.gz
           scp: |
             core/qq-farm-bot.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/home/ubuntu/qq-farm-bot.tar.gz
           script: |
