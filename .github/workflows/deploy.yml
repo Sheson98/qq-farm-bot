@@ -3,79 +3,51 @@ on:
   push:
     branches: [ master ]
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
-
-      - name: Check pnpm version
-        run: pnpm -v
-
-      - name: Install dependencies and build
-        run: |
-          cd core
-          pnpm install --frozen-lockfile
-          pnpm run build
-          # 打包dist
-          tar -zcvf qq-farm-bot.tar.gz dist
-          echo "====打包完成，core目录文件列表===="
-          ls -la
-          echo "tar包路径：$PWD/qq-farm-bot.tar.gz"
-
-      # 【重点】上传压缩包
-      - name: Upload tar to server
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # source 是仓库内的相对路径 core/xxx
-          source: "core/qq-farm-bot.tar.gz"
-          # target 服务器目录
-          target: "/home/${{ secrets.SSH_USER }}/"
-          command_timeout: 10m
-
-      - name: Deploy on server
+      - name: SSH to server and deploy
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
-          command_timeout: 10m
+          command_timeout: 20m
           script: |
             set -e
-            echo "=== 开始部署 ==="
-            FILE="/home/${{ secrets.SSH_USER }}/qq-farm-bot.tar.gz"
-            echo "检查文件: $FILE"
-            ls -lh $FILE
+            source ~/.bashrc
+            echo "==== 进入服务器部署流程 ===="
 
-            # 备份旧版本
+            # 1. 如果不存在项目目录，clone仓库；存在就pull最新代码
+            if [ ! -d "/home/${{ secrets.SSH_USER }}/qq-farm-bot-src" ]; then
+              git clone https://github.com/Sheson98/qq-farm-bot.git /home/${{ secrets.SSH_USER }}/qq-farm-bot-src
+            fi
+
+            cd /home/${{ secrets.SSH_USER }}/qq-farm-bot-src
+            git checkout master
+            git pull origin master
+
+            # 2. 安装依赖 + 构建（服务器本地执行pnpm build）
+            cd core
+            npm install -g pnpm@10
+            pnpm install --frozen-lockfile
+            pnpm run build
+
+            # 3. 备份旧版本
             if [ -d "/home/${{ secrets.SSH_USER }}/qq-farm-bot" ]; then
               mv /home/${{ secrets.SSH_USER }}/qq-farm-bot /home/${{ secrets.SSH_USER }}/qq-farm-bot.bak.$(date +%Y%m%d_%H%M%S)
             fi
 
+            # 4. 复制构建产物dist到运行目录
             mkdir -p /home/${{ secrets.SSH_USER }}/qq-farm-bot
-            cd /home/${{ secrets.SSH_USER }}/qq-farm-bot
-            tar -zxvf $FILE
+            cp -r dist /home/${{ secrets.SSH_USER }}/qq-farm-bot/
 
-            echo "=== 解压完成，目录列表 ==="
-            ls -la
-
-            rm -f $FILE
-
-            # pm2重启
-            echo "=== 重启pm2 ==="
-            source ~/.bashrc
-            pm2 restart qq-farm-bot || pm2 start dist/index.js --name qq-farm-bot
+            # 5. pm2重启bot
+            echo "==== 重启pm2进程 ===="
+            pm2 restart qq-farm-bot || pm2 start /home/${{ secrets.SSH_USER }}/qq-farm-bot/dist/index.js --name qq-farm-bot
             pm2 save
+            echo "✅ 部署完成"
