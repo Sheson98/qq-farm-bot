@@ -2,7 +2,6 @@ name: Build & Deploy
 on:
   push:
     branches: [ master ]
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -10,11 +9,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          # 这里！！不要写 version:xx 这一行，直接删掉
-          node-version: 20
+        # 不写version，自动读取package.json里的pnpm版本
 
       - name: Check pnpm version
         run: pnpm -v
@@ -24,20 +27,23 @@ jobs:
           cd core
           pnpm install --frozen-lockfile
           pnpm run build
-          # 在core目录打包dist文件夹，包放在core/qq-farm-bot.tar.gz
+          # 在core目录打包dist文件夹，输出 core/qq-farm-bot.tar.gz
           tar -zcvf qq-farm-bot.tar.gz dist
-          
+          ls -la # 调试，看打包是否成功生成文件
 
-      - name: Upload zip & Unzip
+      - name: Upload tar & Deploy
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
+          # scp 源路径修正：core/qq-farm-bot.tar.gz
+          scp: |
+            core/qq-farm-bot.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/home/ubuntu/qq-farm-bot.tar.gz
           script: |
             set -e
-            # 备份
+            # 备份旧程序
             if [ -d "/home/ubuntu/qq-farm-bot" ]; then
               mv /home/ubuntu/qq-farm-bot /home/ubuntu/qq-farm-bot.bak.$(date +%Y%m%d_%H%M%S)
             fi
@@ -45,6 +51,3 @@ jobs:
             cd /home/ubuntu/qq-farm-bot
             tar -zxvf /home/ubuntu/qq-farm-bot.tar.gz
             rm -f /home/ubuntu/qq-farm-bot.tar.gz
-          # scp：本地 core/dist/qq-farm-bot.tar.gz 上传到服务器 /home/ubuntu/qq-farm-bot.tar.gz
-          scp: |
-            core/dist/qq-farm-bot.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/home/ubuntu/qq-farm-bot.tar.gz
