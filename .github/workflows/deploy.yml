@@ -11,7 +11,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        # 不写version，自动读取package.json packageManager pnpm@10.30.2
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -29,18 +28,22 @@ jobs:
           pnpm run build
           # 打包dist
           tar -zcvf qq-farm-bot.tar.gz dist
+          echo "====打包完成，core目录文件列表===="
           ls -la
-          pwd
+          echo "tar包路径：$PWD/qq-farm-bot.tar.gz"
 
-      # ========= 改用独立 appleboy/scp-action 上传，更稳定 =========
+      # 【重点】上传压缩包
       - name: Upload tar to server
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # source 是仓库内的相对路径 core/xxx
           source: "core/qq-farm-bot.tar.gz"
-          target: "/home/ubuntu/"
+          # target 服务器目录
+          target: "/home/${{ secrets.SSH_USER }}/"
+          command_timeout: 10m
 
       - name: Deploy on server
         uses: appleboy/ssh-action@master
@@ -49,27 +52,30 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
+          command_timeout: 10m
           script: |
             set -e
             echo "=== 开始部署 ==="
-            ls -lh /home/ubuntu/qq-farm-bot.tar.gz
+            FILE="/home/${{ secrets.SSH_USER }}/qq-farm-bot.tar.gz"
+            echo "检查文件: $FILE"
+            ls -lh $FILE
 
             # 备份旧版本
-            if [ -d "/home/ubuntu/qq-farm-bot" ]; then
-              mv /home/ubuntu/qq-farm-bot /home/ubuntu/qq-farm-bot.bak.$(date +%Y%m%d_%H%M%S)
+            if [ -d "/home/${{ secrets.SSH_USER }}/qq-farm-bot" ]; then
+              mv /home/${{ secrets.SSH_USER }}/qq-farm-bot /home/${{ secrets.SSH_USER }}/qq-farm-bot.bak.$(date +%Y%m%d_%H%M%S)
             fi
 
-            mkdir -p /home/ubuntu/qq-farm-bot
-            cd /home/ubuntu/qq-farm-bot
-            tar -zxvf /home/ubuntu/qq-farm-bot.tar.gz
+            mkdir -p /home/${{ secrets.SSH_USER }}/qq-farm-bot
+            cd /home/${{ secrets.SSH_USER }}/qq-farm-bot
+            tar -zxvf $FILE
 
             echo "=== 解压完成，目录列表 ==="
             ls -la
 
-            # 删除压缩包
-            rm -f /home/ubuntu/qq-farm-bot.tar.gz
+            rm -f $FILE
 
-            # pm2重启（重点！自动重启bot）
+            # pm2重启
             echo "=== 重启pm2 ==="
+            source ~/.bashrc
             pm2 restart qq-farm-bot || pm2 start dist/index.js --name qq-farm-bot
             pm2 save
