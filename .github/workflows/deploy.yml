@@ -3,51 +3,79 @@ on:
   push:
     branches: [ master ]
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: SSH to server and deploy
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install & Build
+        run: |
+          cd core
+          pnpm install --frozen-lockfile
+          pnpm run build
+          # 打包编译后的dist
+          tar -zcvf dist.tar.gz dist
+          ls -la
+
+      # 上传打包文件到Github Artifact（临时存储，供服务器下载）
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-dist
+          path: core/dist.tar.gz
+          retention-days: 1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      # 下载刚才打包好的artifact到action runner
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bot-dist
+          path: ./
+
+      # 通过ssh登录服务器，curl从github artifact下载dist.tar.gz到服务器
+      - name: Deploy to server
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
-          command_timeout: 20m
+          command_timeout: 10m
           script: |
             set -e
             source ~/.bashrc
-            echo "==== 进入服务器部署流程 ===="
+            echo "=== 开始部署 ==="
+            RUN_DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
+            FILE="/home/${{ secrets.SSH_USER }}/dist.tar.gz"
 
-            # 1. 如果不存在项目目录，clone仓库；存在就pull最新代码
-            if [ ! -d "/home/${{ secrets.SSH_USER }}/qq-farm-bot-src" ]; then
-              git clone https://github.com/Sheson98/qq-farm-bot.git /home/${{ secrets.SSH_USER }}/qq-farm-bot-src
+            # 备份旧版本
+            if [ -d "$RUN_DIR" ]; then
+              mv $RUN_DIR ${RUN_DIR}.bak.$(date +%Y%m%d_%H%M%S)
             fi
 
-            cd /home/${{ secrets.SSH_USER }}/qq-farm-bot-src
-            git checkout master
-            git pull origin master
+            mkdir -p $RUN_DIR
+            cd $RUN_DIR
 
-            # 2. 安装依赖 + 构建（服务器本地执行pnpm build）
-            cd core
-            npm install -g pnpm@10
-            pnpm install --frozen-lockfile
-            pnpm run build
+            # 从Github Artifact下载打包好的dist压缩包
+            curl -L -o $FILE ${{ steps.download-artifact.outputs.download-path }}/dist.tar.gz
+            tar -zxvf $FILE
+            rm -f $FILE
 
-            # 3. 备份旧版本
-            if [ -d "/home/${{ secrets.SSH_USER }}/qq-farm-bot" ]; then
-              mv /home/${{ secrets.SSH_USER }}/qq-farm-bot /home/${{ secrets.SSH_USER }}/qq-farm-bot.bak.$(date +%Y%m%d_%H%M%S)
-            fi
-
-            # 4. 复制构建产物dist到运行目录
-            mkdir -p /home/${{ secrets.SSH_USER }}/qq-farm-bot
-            cp -r dist /home/${{ secrets.SSH_USER }}/qq-farm-bot/
-
-            # 5. pm2重启bot
-            echo "==== 重启pm2进程 ===="
-            pm2 restart qq-farm-bot || pm2 start /home/${{ secrets.SSH_USER }}/qq-farm-bot/dist/index.js --name qq-farm-bot
+            echo "=== 重启pm2 ==="
+            pm2 restart qq-farm-bot || pm2 start ${RUN_DIR}/dist/index.js --name qq-farm-bot
             pm2 save
             echo "✅ 部署完成"
