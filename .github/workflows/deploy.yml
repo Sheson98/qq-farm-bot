@@ -11,7 +11,7 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        # 不写version，自动读取package.json packageManager字段 pnpm@10.30.2
+        # 不写version，自动读取package.json packageManager pnpm@10.30.2
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -27,27 +27,49 @@ jobs:
           cd core
           pnpm install --frozen-lockfile
           pnpm run build
-          # 在core目录打包dist文件夹，输出 core/qq-farm-bot.tar.gz
+          # 打包dist
           tar -zcvf qq-farm-bot.tar.gz dist
-          ls -la # 打印目录，确认tar包生成成功
+          ls -la
+          pwd
 
-      - name: Upload tar & Deploy
+      # ========= 改用独立 appleboy/scp-action 上传，更稳定 =========
+      - name: Upload tar to server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "core/qq-farm-bot.tar.gz"
+          target: "/home/ubuntu/"
+
+      - name: Deploy on server
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
-          # scp 上传 core/qq-farm-bot.tar.gz 到服务器 /home/ubuntu/qq-farm-bot.tar.gz
-          scp: |
-            core/qq-farm-bot.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/home/ubuntu/qq-farm-bot.tar.gz
           script: |
             set -e
-            # 备份旧程序
+            echo "=== 开始部署 ==="
+            ls -lh /home/ubuntu/qq-farm-bot.tar.gz
+
+            # 备份旧版本
             if [ -d "/home/ubuntu/qq-farm-bot" ]; then
               mv /home/ubuntu/qq-farm-bot /home/ubuntu/qq-farm-bot.bak.$(date +%Y%m%d_%H%M%S)
             fi
+
             mkdir -p /home/ubuntu/qq-farm-bot
             cd /home/ubuntu/qq-farm-bot
             tar -zxvf /home/ubuntu/qq-farm-bot.tar.gz
+
+            echo "=== 解压完成，目录列表 ==="
+            ls -la
+
+            # 删除压缩包
             rm -f /home/ubuntu/qq-farm-bot.tar.gz
+
+            # pm2重启（重点！自动重启bot）
+            echo "=== 重启pm2 ==="
+            pm2 restart qq-farm-bot || pm2 start dist/index.js --name qq-farm-bot
+            pm2 save
