@@ -23,11 +23,10 @@ jobs:
           cd core
           pnpm install --frozen-lockfile
           pnpm run build
-          # 打包编译后的dist
           tar -zcvf dist.tar.gz dist
           ls -la
 
-      # 上传打包文件到Github Artifact（临时存储，供服务器下载）
+      # 上传产物为artifact
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -39,15 +38,26 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      # 下载刚才打包好的artifact到action runner
+      # 把artifact下载到当前deploy的runner本地
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: bot-dist
           path: ./
 
-      # 通过ssh登录服务器，curl从github artifact下载dist.tar.gz到服务器
-      - name: Deploy to server
+      # SCP：把本地dist.tar.gz上传到服务器
+      - name: Upload tar.gz to server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "dist.tar.gz"
+          target: "/home/${{ secrets.SSH_USER }}/"
+          command_timeout: 10m
+
+      # SSH进入服务器解压+备份+pm2重启
+      - name: Deploy script on server
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -69,9 +79,6 @@ jobs:
 
             mkdir -p $RUN_DIR
             cd $RUN_DIR
-
-            # 从Github Artifact下载打包好的dist压缩包
-            curl -L -o $FILE ${{ steps.download-artifact.outputs.download-path }}/dist.tar.gz
             tar -zxvf $FILE
             rm -f $FILE
 
