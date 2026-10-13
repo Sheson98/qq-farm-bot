@@ -17,7 +17,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        # 不写version，自动读取package.json里的pnpm版本
+        with:
+          version: 9 # 重点：加上这一行！
 
       - name: Check pnpm version
         run: pnpm -v
