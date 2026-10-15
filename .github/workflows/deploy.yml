@@ -18,30 +18,31 @@ jobs:
             DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
             GIT_REPO="https://gitee.com/sheson/qq-farm-bot.git"
 
-            # 【同时清除 全局 + 当前仓库内 ghproxy 替换规则】
-            git config --global --unset url."https://mirror.ghproxy.com/https://github.com/" || true
-            git config --unset url."https://mirror.ghproxy.com/https://github.com/" || true
+            # 直接删除全局git配置文件，一次性清除ghproxy所有替换规则（治本）
+            rm -f ~/.gitconfig
 
+            # 如果目录存在，先检查；remote不对就整目录删除，彻底清除仓库内残留配置
+            if [ -d "$DIR" ]; then
+              cd $DIR
+              # 获取origin地址
+              REMOTE_URL=$(git remote get-url origin)
+              echo "当前 origin = $REMOTE_URL"
+              if [ "$REMOTE_URL" != "$GIT_REPO" ]; then
+                echo "仓库地址异常，删除旧目录，重新从Gitee克隆"
+                cd ~
+                rm -rf $DIR
+              fi
+            fi
+
+            # 目录不存在，全新克隆Gitee仓库
             if [ ! -d "$DIR" ]; then
-              echo "目录不存在，从Gitee克隆仓库"
+              echo "开始从Gitee克隆代码"
               git clone --depth 1 $GIT_REPO $DIR
             fi
 
             cd $DIR
-            echo "===== 检查远程仓库remote地址 ====="
-            REMOTE_URL=$(git remote get-url origin)
-            echo "当前 origin 地址：$REMOTE_URL"
-
-            # 判断，如果不是目标Gitee地址，自动修改remote
-            if [ "$REMOTE_URL" != "$GIT_REPO" ]; then
-              echo "remote地址不对，自动修改为Gitee地址"
-              git remote set-url origin $GIT_REPO
-            fi
-
-            echo "拉取最新代码"
             git pull origin master
 
-            echo "启动docker compose"
             docker compose up -d --build
             docker image prune -f
             echo "✅ 部署完成"
