@@ -1,110 +1,30 @@
-name: Build & Deploy
+name: Build & Deploy Docker
 on:
   push:
     branches: [ master ]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
-
-      - name: Install & Build Project
-        run: |
-          cd core
-          pnpm install --frozen-lockfile
-          echo "🚀 开始构建项目"
-          pnpm run build
-
-          # 调试：打印产物，确认index.js存在
-          echo "==== core目录文件列表 ===="
-          ls -la
-          echo "==== 查找index.js入口 ===="
-          find . -name "index.js"
-
-          # 打包core下全部产物（.代表当前core目录，把所有文件打进压缩包）
-          tar -zcvf qq-farm-bot.tar.gz .
-          ls -la
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bot-dist
-          path: core/qq-farm-bot.tar.gz
-          retention-days: 1
-
   deploy:
-    needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: bot-dist
-          path: ./
-
-      - name: Upload tar.gz to server
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "qq-farm-bot.tar.gz"
-          target: "/home/${{ secrets.SSH_USER }}/"
-          command_timeout: 10m
-
-      - name: Deploy & Restart PM2 on Server
+      - name: SSH Deploy to Server
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script_stop: true
-          command_timeout: 10m
           script: |
             set -e
-            echo "=== 📦 开始部署 qq-farm-bot ==="
-            RUN_DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
-            TAR_FILE="/home/${{ secrets.SSH_USER }}/qq-farm-bot.tar.gz"
-            PM2_BIN=$(which pm2)
-            echo "PM2路径: $PM2_BIN"
+            DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
 
-            # 备份旧项目，保留时间戳
-            if [ -d "$RUN_DIR" ]; then
-              BACKUP_NAME="${RUN_DIR}.bak.$(date +%Y%m%d_%H%M%S)"
-              echo "备份旧版本到: $BACKUP_NAME"
-              mv $RUN_DIR $BACKUP_NAME
-
-              # 自动清理7天前的旧备份，防止占磁盘
-              find /home/${{ secrets.SSH_USER }} -maxdepth 1 -name "qq-farm-bot.bak.*" -type d -mtime +7 -exec rm -rf {} \;
+            # 如果目录不存在，clone仓库；存在则拉最新代码
+            if [ ! -d "$DIR" ]; then
+              git clone https://github.com/liyangpengs/qq-farm-bot.git $DIR
             fi
+            cd $DIR
+            git pull origin master
 
-            # 创建目录并解压
-            mkdir -p $RUN_DIR
-            cd $RUN_DIR
-            echo "解压压缩包..."
-            tar -zxvf $TAR_FILE
-            rm -f $TAR_FILE
+            # 构建镜像并后台启动容器
+            docker compose up -d --build
 
-            # 调试打印目录结构
-            echo "==== 当前部署目录 ===="
-            pwd
-            ls -la
-            echo "==== 查找入口index.js ===="
-            find . -name "index.js"
-
-            # PM2 重启/启动bot
-            echo "=== 🔄 操作PM2进程 ==="
-            $PM2_BIN restart qq-farm-bot --update-env || $PM2_BIN start ./index.js --name qq-farm-bot --update-env
-            $PM2_BIN save
-            echo "✅ 部署完成！"
+            echo "✅ 部署完成"
