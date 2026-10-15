@@ -1,4 +1,4 @@
-name: Build & Deploy Docker
+name: Build1 & Deploy Docker
 on:
   push:
     branches: [ master ]
