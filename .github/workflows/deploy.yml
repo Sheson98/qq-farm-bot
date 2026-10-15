@@ -1,88 +1,26 @@
-name: Build & Deploy
-on:
-  push:
-    branches: [ master ]
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+script: |
+  set -e
+  echo "=== 开始部署 ==="
+  RUN_DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
+  FILE="/home/${{ secrets.SSH_USER }}/dist.tar.gz"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+  # 备份旧版本
+  if [ -d "$RUN_DIR" ]; then
+    mv $RUN_DIR ${RUN_DIR}.bak.$(date +%Y%m%d_%H%M%S)
+  fi
+  mkdir -p $RUN_DIR
+  cd $RUN_DIR
+  tar -zxvf $FILE
+  rm -f $FILE
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
+  # 打印目录，调试用，看文件是否存在
+  echo "===== 目录结构 ====="
+  pwd
+  ls -la
+  ls -la ./dist
 
-      - name: Install & Build
-        run: |
-          cd core
-          pnpm install --frozen-lockfile
-          pnpm run build
-          tar -zcvf dist.tar.gz dist
-          ls -la
-
-      # 上传产物为artifact
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bot-dist
-          path: core/dist.tar.gz
-          retention-days: 1
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      # 把artifact下载到当前deploy的runner本地
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: bot-dist
-          path: ./
-
-      # SCP：把本地dist.tar.gz上传到服务器
-      - name: Upload tar.gz to server
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "dist.tar.gz"
-          target: "/home/${{ secrets.SSH_USER }}/"
-          command_timeout: 10m
-
-      # SSH进入服务器解压+备份+pm2重启
-      - name: Deploy script on server
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script_stop: true
-          command_timeout: 10m
-          script: |
-            set -e
-            source ~/.bashrc
-            echo "=== 开始部署 ==="
-            RUN_DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
-            FILE="/home/${{ secrets.SSH_USER }}/dist.tar.gz"
-
-            # 备份旧版本
-            if [ -d "$RUN_DIR" ]; then
-              mv $RUN_DIR ${RUN_DIR}.bak.$(date +%Y%m%d_%H%M%S)
-            fi
-
-            mkdir -p $RUN_DIR
-            cd $RUN_DIR
-            tar -zxvf $FILE
-            rm -f $FILE
-
-            echo "=== 重启pm2 ==="
-            pm2 restart qq-farm-bot || pm2 start ${RUN_DIR}/dist/index.js --name qq-farm-bot
-            pm2 save
-            echo "✅ 部署完成"
+  echo "=== 重启pm2 ==="
+  # 先尝试重启，失败就新建；加|| true防止restart报错中断
+  pm2 restart qq-farm-bot || pm2 start ./dist/index.js --name qq-farm-bot
+  pm2 save
+  echo "✅ 部署完成"
