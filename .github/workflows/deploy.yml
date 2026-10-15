@@ -23,6 +23,12 @@ jobs:
           cd core
           pnpm install --frozen-lockfile
           pnpm run build
+          # 打印看build结果
+          echo "=== core目录内容 ==="
+          ls -la
+          echo "=== dist目录内容 ==="
+          ls -la dist
+          # 打包dist整个文件夹（不要加*）
           tar -zcvf dist.tar.gz dist
           ls -la
 
