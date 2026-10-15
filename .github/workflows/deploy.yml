@@ -2,6 +2,7 @@ name: Build & Deploy
 on:
   push:
     branches: [ master ]
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,52 +19,51 @@ jobs:
           node-version: 20
           cache: 'pnpm'
 
-      - name: Install & Build
+      - name: Install & Build Project
         run: |
           cd core
           pnpm install --frozen-lockfile
+          echo "🚀 开始构建项目"
           pnpm run build
-          # 打印看build结果
-          echo "=== core目录内容 ==="
+
+          # 调试：打印产物，确认index.js存在
+          echo "==== core目录文件列表 ===="
           ls -la
-          echo "=== dist目录内容 ==="
-          ls -la dist
-          # 打包dist整个文件夹（不要加*）
-          tar -zcvf dist.tar.gz dist
+          echo "==== 查找index.js入口 ===="
+          find . -name "index.js"
+
+          # 打包core下全部产物（.代表当前core目录，把所有文件打进压缩包）
+          tar -zcvf qq-farm-bot.tar.gz .
           ls -la
 
-      # 上传产物为artifact
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: bot-dist
-          path: core/dist.tar.gz
+          path: core/qq-farm-bot.tar.gz
           retention-days: 1
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      # 把artifact下载到当前deploy的runner本地
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: bot-dist
           path: ./
 
-      # SCP：把本地dist.tar.gz上传到服务器
       - name: Upload tar.gz to server
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "dist.tar.gz"
+          source: "qq-farm-bot.tar.gz"
           target: "/home/${{ secrets.SSH_USER }}/"
           command_timeout: 10m
 
-      # SSH进入服务器解压+备份+pm2重启
-      - name: Deploy script on server
+      - name: Deploy & Restart PM2 on Server
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -72,29 +72,39 @@ jobs:
           script_stop: true
           command_timeout: 10m
           script: |
-              set -e
-              echo "=== 开始部署 ==="
-              RUN_DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
-              FILE="/home/${{ secrets.SSH_USER }}/dist.tar.gz"
-            
-              # 备份旧版本
-              if [ -d "$RUN_DIR" ]; then
-                mv $RUN_DIR ${RUN_DIR}.bak.$(date +%Y%m%d_%H%M%S)
-              fi
-              mkdir -p $RUN_DIR
-              cd $RUN_DIR
-              tar -zxvf $FILE
-              rm -f $FILE
-            
-              # 打印目录，调试用，看文件是否存在
-              echo "===== 目录结构 ====="
-              pwd
-              ls -la
-              ls -la ./dist
-            
-              echo "=== 重启pm2 ==="
-              # 先尝试重启，失败就新建；加|| true防止restart报错中断
-              pm2 restart qq-farm-bot || pm2 start ./dist/index.js --name qq-farm-bot
-              pm2 save
-              echo "✅ 部署完成"
+            set -e
+            echo "=== 📦 开始部署 qq-farm-bot ==="
+            RUN_DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
+            TAR_FILE="/home/${{ secrets.SSH_USER }}/qq-farm-bot.tar.gz"
+            PM2_BIN=$(which pm2)
+            echo "PM2路径: $PM2_BIN"
 
+            # 备份旧项目，保留时间戳
+            if [ -d "$RUN_DIR" ]; then
+              BACKUP_NAME="${RUN_DIR}.bak.$(date +%Y%m%d_%H%M%S)"
+              echo "备份旧版本到: $BACKUP_NAME"
+              mv $RUN_DIR $BACKUP_NAME
+
+              # 自动清理7天前的旧备份，防止占磁盘
+              find /home/${{ secrets.SSH_USER }} -maxdepth 1 -name "qq-farm-bot.bak.*" -type d -mtime +7 -exec rm -rf {} \;
+            fi
+
+            # 创建目录并解压
+            mkdir -p $RUN_DIR
+            cd $RUN_DIR
+            echo "解压压缩包..."
+            tar -zxvf $TAR_FILE
+            rm -f $TAR_FILE
+
+            # 调试打印目录结构
+            echo "==== 当前部署目录 ===="
+            pwd
+            ls -la
+            echo "==== 查找入口index.js ===="
+            find . -name "index.js"
+
+            # PM2 重启/启动bot
+            echo "=== 🔄 操作PM2进程 ==="
+            $PM2_BIN restart qq-farm-bot --update-env || $PM2_BIN start ./index.js --name qq-farm-bot --update-env
+            $PM2_BIN save
+            echo "✅ 部署完成！"
