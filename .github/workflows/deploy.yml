@@ -66,23 +66,29 @@ jobs:
           script_stop: true
           command_timeout: 10m
           script: |
-            set -e
-            source ~/.bashrc
-            echo "=== 开始部署 ==="
-            RUN_DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
-            FILE="/home/${{ secrets.SSH_USER }}/dist.tar.gz"
+              set -e
+              echo "=== 开始部署 ==="
+              RUN_DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
+              FILE="/home/${{ secrets.SSH_USER }}/dist.tar.gz"
+            
+              # 备份旧版本
+              if [ -d "$RUN_DIR" ]; then
+                mv $RUN_DIR ${RUN_DIR}.bak.$(date +%Y%m%d_%H%M%S)
+              fi
+              mkdir -p $RUN_DIR
+              cd $RUN_DIR
+              tar -zxvf $FILE
+              rm -f $FILE
+            
+              # 打印目录，调试用，看文件是否存在
+              echo "===== 目录结构 ====="
+              pwd
+              ls -la
+              ls -la ./dist
+            
+              echo "=== 重启pm2 ==="
+              # 先尝试重启，失败就新建；加|| true防止restart报错中断
+              pm2 restart qq-farm-bot || pm2 start ./dist/index.js --name qq-farm-bot
+              pm2 save
+              echo "✅ 部署完成"
 
-            # 备份旧版本
-            if [ -d "$RUN_DIR" ]; then
-              mv $RUN_DIR ${RUN_DIR}.bak.$(date +%Y%m%d_%H%M%S)
-            fi
-
-            mkdir -p $RUN_DIR
-            cd $RUN_DIR
-            tar -zxvf $FILE
-            rm -f $FILE
-
-            echo "=== 重启pm2 ==="
-            pm2 restart qq-farm-bot || pm2 start ${RUN_DIR}/dist/index.js --name qq-farm-bot
-            pm2 save
-            echo "✅ 部署完成"
