@@ -15,16 +15,16 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
+            # 配置github镜像加速
+            git config --global url."https://mirror.ghproxy.com/https://github.com/".insteadOf "https://github.com/"
             DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
 
-            # 如果目录不存在，clone仓库；存在则拉最新代码
             if [ ! -d "$DIR" ]; then
-              git clone https://github.com/liyangpengs/qq-farm-bot.git $DIR
+              git clone https://github.com/Sheson98/qq-farm-bot.git $DIR
             fi
             cd $DIR
             git pull origin master
 
-            # 构建镜像并后台启动容器
             docker compose up -d --build
-
+            docker image prune -f
             echo "✅ 部署完成"
