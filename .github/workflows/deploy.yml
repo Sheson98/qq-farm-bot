@@ -16,27 +16,25 @@ jobs:
           script: |
             set -e
             DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
-            GIT_REPO="https://gitee.com/sheson/qq-farm-bot.git"
+            # 使用git协议，不需要用户名密码
+            GIT_REPO="git://gitee.com/sheson/qq-farm-bot.git"
 
-            # 直接删除全局git配置文件，一次性清除ghproxy所有替换规则（治本）
+            # 删除全局git配置，清除ghproxy劫持
             rm -f ~/.gitconfig
 
-            # 如果目录存在，先检查；remote不对就整目录删除，彻底清除仓库内残留配置
             if [ -d "$DIR" ]; then
               cd $DIR
-              # 获取origin地址
-              REMOTE_URL=$(git remote get-url origin)
+              REMOTE_URL=$(git remote get-url origin | xargs)
               echo "当前 origin = $REMOTE_URL"
               if [ "$REMOTE_URL" != "$GIT_REPO" ]; then
-                echo "仓库地址异常，删除旧目录，重新从Gitee克隆"
+                echo "地址不对，删除旧目录，重新克隆"
                 cd ~
                 rm -rf $DIR
               fi
             fi
 
-            # 目录不存在，全新克隆Gitee仓库
             if [ ! -d "$DIR" ]; then
-              echo "开始从Gitee克隆代码"
+              echo "从Gitee git协议克隆"
               git clone --depth 1 $GIT_REPO $DIR
             fi
 
