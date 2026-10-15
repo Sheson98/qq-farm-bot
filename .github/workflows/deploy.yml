@@ -15,12 +15,11 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
-            # 配置github镜像加速
-            git config --global url."https://mirror.ghproxy.com/https://github.com/".insteadOf "https://github.com/"
             DIR="/home/${{ secrets.SSH_USER }}/qq-farm-bot"
 
+            # 目录不存在则从Gitee克隆，存在则拉取最新代码
             if [ ! -d "$DIR" ]; then
-              git clone https://github.com/Sheson98/qq-farm-bot.git $DIR
+              git clone https://gitee.com/sheson/qq-farm-bot.git $DIR
             fi
             cd $DIR
             git pull origin master
